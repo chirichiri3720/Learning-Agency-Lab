@@ -1,0 +1,19 @@
+hydra:
+  run:
+    dir: outputs/single/${hydra.job.name}/${data.name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+    dir: outputs/multirun/${hydra.job.name}/${data.name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${seed}
+
+defaults:
+  - _self_
+  - data: 
+  - model: 
+  - exp: 
+
+n_splits: 10
+metrics: ACC
+
+seed: 42
+gpuid: 0
+task: classifier  # classifier または regressor
