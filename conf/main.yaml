@@ -7,9 +7,9 @@ hydra:
 
 defaults:
   - _self_
-  - data: 
-  - model: 
-  - exp: 
+  - data: base
+  # - model: bert
+  - exp: simple
 
 n_splits: 10
 metrics: ACC
