@@ -2,6 +2,12 @@ import numpy as np
 import pandas as pd
 
 from hydra.utils import to_absolute_path
+import torch
+from torch.utils.data import TensorDataset, DataLoader, RandomSampler, SequentialSampler
+from transformers import BertTokenizer
+from transformers import BertForSequenceClassification, AdamW
+from torch.nn import CrossEntropyLoss
+from model import MyBERTModel
 
 class ExpBase:
     def __init__(self, config):
@@ -14,23 +20,24 @@ class ExpSimple(ExpBase):
     def __init__(self, config):
         super().__init__(config)
 
+
     def run(self):
         train = pd.read_csv(to_absolute_path("datasets/train.csv"))
         test = pd.read_csv(to_absolute_path("datasets/test.csv"))
+
+        train = train[:100]
         
         texts = train['full_text'].tolist()
         labels = train['score'].tolist()
 
-        from transformers import BertTokenizer
+        labels = [label - 1 for label in labels]    
+        
 
         # トークナイザーの読み込み
         tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 
         # テキストデータのトークン化
         inputs = tokenizer(texts, padding=True, truncation=True, return_tensors="pt")
-
-        import torch
-        from torch.utils.data import TensorDataset, DataLoader, RandomSampler, SequentialSampler
 
         # ラベルをテンソルに変換
         labels = torch.tensor(labels)
@@ -41,16 +48,18 @@ class ExpSimple(ExpBase):
         # データローダーの作成
         train_dataloader = DataLoader(dataset, sampler=RandomSampler(dataset), batch_size=8)
 
-
-        from transformers import BertForSequenceClassification, AdamW
-
-        # モデルの読み込み
+        # model = MyBERTModel(num_labels=6)
         model = BertForSequenceClassification.from_pretrained('bert-base-uncased', num_labels=6)
+
+        for name, param in model.named_parameters():
+            if 'classifier' in name:
+                param.requires_grad = True
+            else:
+                param.requires_grad = False
 
         # オプティマイザーの準備
         optimizer = AdamW(model.parameters(), lr=2e-5)
 
-        from torch.nn import CrossEntropyLoss
 
         # モデルをトレーニングモードに設定
         model.train()
@@ -81,6 +90,10 @@ class ExpSimple(ExpBase):
                     print(f"Epoch: {epoch}, Step: {step}, Loss: {loss.item()}")
         
         print('train completed')
+
+        torch.save(model.state_dict(),'model_weight.pth')
+
+        # model = torch.load('model_weight.pth')
 
         # # モデルを評価モードに設定
         # model.eval()
