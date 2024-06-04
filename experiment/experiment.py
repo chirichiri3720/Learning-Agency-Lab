@@ -5,11 +5,14 @@ import numpy as np
 import pandas as pd
 
 import torch
+import os
 
 from transformers import AdamW, get_linear_schedule_with_warmup
 from torch.nn import CrossEntropyLoss
 from model import Bertmodel
 from dataset import CustomDataset
+from hydra.utils import to_absolute_path
+from .utils import quadratic_weighted_kappa
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +29,7 @@ class ExpBase:
 
         self.model = Bertmodel(self.device, num_labels=6)
 
-        self.best_accuracy = 0
+        self.best_kappa = 0
 
         df = CustomDataset()
         self.train_dataset, self.val_dataset, self.train_loader, self.val_loader, self.test_loader = df.prepare_loaders()
@@ -34,7 +37,7 @@ class ExpBase:
 
         # Optimizer and scheduler
         self.optimizer = AdamW(self.model.parameters(), lr=2e-5, correct_bias=False)
-        self.total_steps = len(self.train_loader) * 3
+        self.total_steps = len(self.train_loader) * self.epochs
         self.scheduler = get_linear_schedule_with_warmup(self.optimizer, num_warmup_steps=0, num_training_steps=self.total_steps)
 
         # Loss function
@@ -72,7 +75,9 @@ class ExpBase:
     def eval_model(self, n_examples):
         self.model.eval()
         losses = []
-        correct_predictions = 0
+        true_labels = []
+        pred_labels = []
+        # correct_predictions = 0
         with torch.no_grad():
             for d in self.val_loader:
                 input_ids = d["input_ids"].to(self.device)
@@ -87,14 +92,19 @@ class ExpBase:
                 _, preds = torch.max(outputs.logits, dim=1)
                 loss = self.loss_fn(outputs.logits, labels)
 
-                correct_predictions += torch.sum(preds == labels)
+                # correct_predictions += torch.sum(preds == labels)
+                # losses.append(loss.item())
+
+                true_labels.extend(labels.cpu().numpy())
+                pred_labels.extend(preds.cpu().numpy())
                 losses.append(loss.item())
 
-        return correct_predictions.double() / n_examples, np.mean(losses)
+        kappa = quadratic_weighted_kappa(true_labels, pred_labels)
+        return kappa, np.mean(losses)
+        # return correct_predictions.double() / n_examples, np.mean(losses)
     
     def get_predictions(self):
         self.model.eval()
-        essay_ids = []
         predictions = []
 
         with torch.no_grad():
@@ -106,8 +116,10 @@ class ExpBase:
                     input_ids=input_ids,
                     attention_mask=attention_mask
                 )
-                
-                preds = torch.max(outputs.logits, dim=1)
+                 
+                _, preds = torch.max(outputs.logits, dim=1)
+
+                preds += 1
 
                 predictions.extend(preds)
 
@@ -129,16 +141,22 @@ class ExpBase:
 
             logger.info(f'Train loss: {train_loss} accuracy: {train_acc}')
 
-            val_acc, val_loss = self.eval_model(len(self.val_dataset))
+            val_kappa, val_loss = self.eval_model(len(self.val_dataset))
 
-            logger.info(f'Val loss {val_loss} accuracy {val_acc}')
+            logger.info(f'Val loss {val_loss} kappa {val_kappa}')
             
-            if val_acc >= self.best_accuracy:
-                self.best_accuracy = val_acc
+            if val_kappa >= self.best_kappa:
+                self.best_kappa = val_kappa
                 torch.save(self.model.state_dict(), 'best_model_state.bin')
             
         
-        self.model.load_state_dict(torch.load('best_model_state.bin'))
+        # self.model.load_state_dict(torch.load('best_model_state.bin'))
+
+        if os.path.exists('best_model_state.bin'):
+            self.model.load_state_dict(torch.load('best_model_state.bin'))
+        else:
+            logger.error("No model file found. Ensure training completes successfully.")
+
 
         preds = self.get_predictions()
 
