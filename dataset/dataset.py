@@ -27,7 +27,7 @@ class EssayDataset(Dataset):
         input_ids = inputs['input_ids'].flatten()
         attention_mask = inputs['attention_mask'].flatten()
         if self.labels is not None:
-            label = torch.tensor(self.labels[idx], dtype=torch.long)
+            label = torch.tensor(self.labels[idx] - 1, dtype=torch.long)
             return {
                 'input_ids': input_ids,
                 'attention_mask': attention_mask,

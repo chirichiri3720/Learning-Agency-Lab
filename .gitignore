@@ -149,7 +149,7 @@ dmypy.json
 # pytype static type analyzer
 .pytype/
 
-# Cython debug symbols
+# Cython debug symbolsgit branch
 cython_debug/
 
 # PyCharm
@@ -163,3 +163,8 @@ cython_debug/
 datasets/
 outputs/
 packages.zip
+bert-base-uncased-tokenizer.zip
+bert-base-uncased-model.zip
+bert-base-uncased-tokenizer
+bert-base-uncased-model
+
