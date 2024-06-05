@@ -8,12 +8,7 @@ hydra:
 defaults:
   - _self_
   - data: base
-  # - model: bert
+  - model: bert
   - exp: simple
 
-n_splits: 10
-metrics: ACC
-
 seed: 42
-gpuid: 0
-epochs: 1
