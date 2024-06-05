@@ -10,46 +10,45 @@ import os
 from transformers import AdamW, get_linear_schedule_with_warmup
 from torch.nn import CrossEntropyLoss
 from model import Bertmodel
+import dataset.customdataset as customdataset
 from dataset import CustomDataset
 from hydra.utils import to_absolute_path
-from .utils import quadratic_weighted_kappa
+from .utils import quadratic_weighted_kappa, set_seed
 from torchinfo import summary
+
+from model import get_classifier
+
+from sklearn.metrics import cohen_kappa_score
 
 logger = logging.getLogger(__name__)
 
 class ExpBase:
     def __init__(self, config):
-        self.epochs = config.epochs
-        # self.model_name = config.model.name
+        set_seed(config.seed)
+        self.seed = config.seed
 
-        # self.model_config = config.model.params
+        self.model_name = config.model.name
+        self.model_config = config.model.params
         self.exp_config = config.exp
-        # self.data_config = config.data
+        self.data_config = config.data
+
+        self.epochs = config.exp.epochs
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        self.model = Bertmodel(self.device, num_labels=6)
-
         self.best_kappa = 0
 
-        df = CustomDataset()
+        df: CustomDataset = getattr(customdataset, self.data_config.name)(seed=self.seed, **self.data_config)
         self.train_dataset, self.val_dataset, self.train_loader, self.val_loader, self.test_loader = df.prepare_loaders()
         self.id = df.id
-
-        # Optimizer and scheduler
-        self.optimizer = AdamW(self.model.parameters(), lr=2e-5, correct_bias=False)
-        self.total_steps = len(self.train_loader) * self.epochs
-        self.scheduler = get_linear_schedule_with_warmup(self.optimizer, num_warmup_steps=0, num_training_steps=self.total_steps)
+        self.num_labels = df.num_labels
 
         # Loss function
         self.loss_fn = CrossEntropyLoss().to(self.device)
 
-
-
     def train_epoch(self, n_examples):
         self.model.train()
         losses = []
-        correct_predictions = 0
         for d in self.train_loader:
             input_ids = d["input_ids"].to(self.device)
             attention_mask = d["attention_mask"].to(self.device)
@@ -60,18 +59,15 @@ class ExpBase:
                 attention_mask=attention_mask
             )
 
-            _, preds = torch.max(outputs.logits, dim=1)
             loss = self.loss_fn(outputs.logits, labels)
-
-            correct_predictions += torch.sum(preds == labels)
             losses.append(loss.item())
 
             loss.backward()
             self.optimizer.step()
             self.scheduler.step()
             self.optimizer.zero_grad()
-
-        return correct_predictions.double() / n_examples, np.mean(losses)
+            
+        return np.mean(losses)
     
     def eval_model(self, n_examples):
         self.model.eval()
@@ -100,7 +96,7 @@ class ExpBase:
                 pred_labels.extend(preds.cpu().numpy())
                 losses.append(loss.item())
 
-        kappa = quadratic_weighted_kappa(true_labels, pred_labels)
+        kappa = cohen_kappa_score(true_labels, pred_labels, weights='quadratic')
         return kappa, np.mean(losses)
         # return correct_predictions.double() / n_examples, np.mean(losses)
     
@@ -124,27 +120,36 @@ class ExpBase:
 
                 predictions.extend(preds)
 
-            
-        
         predictions = [pred.item() for pred in predictions]
-        print(predictions)
 
         return predictions
 
-
     def run(self):
-        logger.info(f"device: {self.device}")
+        model_config = self.get_model_config()
+        self.model = get_classifier(
+            self.model_name,
+            device = self.device, 
+            model_config = model_config, 
+            num_labels=self.num_labels,
+            seed=self.seed
+        )
+        # Optimizer and scheduler
+        self.optimizer = AdamW(self.model.parameters(), lr=2e-5, correct_bias=False)
+        self.total_steps = len(self.train_loader) * self.epochs
+        self.scheduler = get_linear_schedule_with_warmup(self.optimizer, num_warmup_steps=0, num_training_steps=self.total_steps)
+
+        logger.info(f"model name: {self.model_name} device: {self.device}")
 
         for epoch in range(self.epochs):
             logger.info(f'Epoch {epoch + 1}/{self.epochs}')
 
-            train_acc, train_loss = self.train_epoch(len(self.train_dataset))
+            start_time = time()
+            train_loss = self.train_epoch(len(self.train_dataset))
+            logger.info(f'Train loss: {train_loss} train time: {time() - start_time}')
 
-            logger.info(f'Train loss: {train_loss} accuracy: {train_acc}')
-
+            start_time = time()
             val_kappa, val_loss = self.eval_model(len(self.val_dataset))
-
-            logger.info(f'Val loss {val_loss} kappa {val_kappa}')
+            logger.info(f'Val loss {val_loss} kappa {val_kappa} eval time: {time() - start_time}')
             
             if val_kappa >= self.best_kappa:
                 self.best_kappa = val_kappa
@@ -168,9 +173,15 @@ class ExpBase:
         print(submission_df)
 
         submission_df.to_csv('submission.csv', index=False)
+    
+    def get_model_config(self, *args, **kwargs):
+        raise NotImplementedError()
+
    
 class ExpSimple(ExpBase):
     def __init__(self, config):
         super().__init__(config)
     
+    def get_model_config(self, *args, **kwargs):
+        return self.model_config    
 
