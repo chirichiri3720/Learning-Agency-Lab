@@ -14,6 +14,7 @@ import dataset.customdataset as customdataset
 from dataset import CustomDataset
 from hydra.utils import to_absolute_path
 from .utils import quadratic_weighted_kappa, set_seed
+from sklearn.metrics import cohen_kappa_score
 from torchinfo import summary
 
 from model import get_classifier
@@ -46,7 +47,19 @@ class ExpBase:
         # Loss function
         self.loss_fn = CrossEntropyLoss().to(self.device)
 
-    def train_epoch(self, n_examples):
+    def encoder_train(self):
+
+        for name, param in self.model.named_parameters():
+            param.requires_grad = False
+
+        for name, param in self.model.model.bert.encoder.layer[-1].named_parameters():
+            param.requires_grad = True
+        
+        for name, param in self.model.named_parameters():
+            if param.requires_grad : 
+                print(name)
+
+    def train_epoch(self,n_examples):
         self.model.train()
         losses = []
         for d in self.train_loader:
@@ -69,7 +82,7 @@ class ExpBase:
             
         return np.mean(losses)
     
-    def eval_model(self, n_examples):
+    def eval_model(self,n_examples):
         self.model.eval()
         losses = []
         true_labels = []
@@ -89,16 +102,13 @@ class ExpBase:
                 _, preds = torch.max(outputs.logits, dim=1)
                 loss = self.loss_fn(outputs.logits, labels)
 
-                # correct_predictions += torch.sum(preds == labels)
-                # losses.append(loss.item())
-
                 true_labels.extend(labels.cpu().numpy())
                 pred_labels.extend(preds.cpu().numpy())
                 losses.append(loss.item())
 
-        kappa = cohen_kappa_score(true_labels, pred_labels, weights='quadratic')
+        # kappa = quadratic_weighted_kappa(true_labels, pred_labels)
+        kappa = cohen_kappa_score(true_labels,pred_labels,weights='quadratic')
         return kappa, np.mean(losses)
-        # return correct_predictions.double() / n_examples, np.mean(losses)
     
     def get_predictions(self):
         self.model.eval()
@@ -119,6 +129,7 @@ class ExpBase:
                 preds += 1
 
                 predictions.extend(preds)
+
 
         predictions = [pred.item() for pred in predictions]
 
@@ -156,7 +167,6 @@ class ExpBase:
                 torch.save(self.model.state_dict(), 'best_model_state.bin')
             
         summary(self.model, depth=4)
-        # self.model.load_state_dict(torch.load('best_model_state.bin'))
 
         if os.path.exists('best_model_state.bin'):
             self.model.load_state_dict(torch.load('best_model_state.bin'))
