@@ -13,6 +13,7 @@ from model import Bertmodel
 from dataset import CustomDataset
 from hydra.utils import to_absolute_path
 from .utils import quadratic_weighted_kappa
+from sklearn.metrics import cohen_kappa_score
 from torchinfo import summary
 
 logger = logging.getLogger(__name__)
@@ -44,12 +45,21 @@ class ExpBase:
         # Loss function
         self.loss_fn = CrossEntropyLoss().to(self.device)
 
+    def encoder_train(self):
 
+        for name, param in self.model.named_parameters():
+            param.requires_grad = False
 
-    def train_epoch(self, n_examples):
+        for name, param in self.model.model.bert.encoder.layer[-1].named_parameters():
+            param.requires_grad = True
+        
+        for name, param in self.model.named_parameters():
+            if param.requires_grad : 
+                print(name)
+
+    def train_epoch(self,n_examples):
         self.model.train()
         losses = []
-        correct_predictions = 0
         for d in self.train_loader:
             input_ids = d["input_ids"].to(self.device)
             attention_mask = d["attention_mask"].to(self.device)
@@ -60,10 +70,10 @@ class ExpBase:
                 attention_mask=attention_mask
             )
 
-            _, preds = torch.max(outputs.logits, dim=1)
+            # _, preds = torch.max(outputs.logits, dim=1)
             loss = self.loss_fn(outputs.logits, labels)
 
-            correct_predictions += torch.sum(preds == labels)
+            # correct_predictions += torch.sum(preds == labels)
             losses.append(loss.item())
 
             loss.backward()
@@ -71,9 +81,9 @@ class ExpBase:
             self.scheduler.step()
             self.optimizer.zero_grad()
 
-        return correct_predictions.double() / n_examples, np.mean(losses)
+        return np.mean(losses) 
     
-    def eval_model(self, n_examples):
+    def eval_model(self,n_examples):
         self.model.eval()
         losses = []
         true_labels = []
@@ -93,16 +103,13 @@ class ExpBase:
                 _, preds = torch.max(outputs.logits, dim=1)
                 loss = self.loss_fn(outputs.logits, labels)
 
-                # correct_predictions += torch.sum(preds == labels)
-                # losses.append(loss.item())
-
                 true_labels.extend(labels.cpu().numpy())
                 pred_labels.extend(preds.cpu().numpy())
                 losses.append(loss.item())
 
-        kappa = quadratic_weighted_kappa(true_labels, pred_labels)
+        # kappa = quadratic_weighted_kappa(true_labels, pred_labels)
+        kappa = cohen_kappa_score(true_labels,pred_labels,weights='quadratic')
         return kappa, np.mean(losses)
-        # return correct_predictions.double() / n_examples, np.mean(losses)
     
     def get_predictions(self):
         self.model.eval()
@@ -124,10 +131,7 @@ class ExpBase:
 
                 predictions.extend(preds)
 
-            
-        
         predictions = [pred.item() for pred in predictions]
-        print(predictions)
 
         return predictions
 
@@ -135,12 +139,14 @@ class ExpBase:
     def run(self):
         logger.info(f"device: {self.device}")
 
+        self.encoder_train()
+
         for epoch in range(self.epochs):
             logger.info(f'Epoch {epoch + 1}/{self.epochs}')
 
-            train_acc, train_loss = self.train_epoch(len(self.train_dataset))
+            train_loss = self.train_epoch(len(self.train_dataset))
 
-            logger.info(f'Train loss: {train_loss} accuracy: {train_acc}')
+            logger.info(f'Train loss: {train_loss}')
 
             val_kappa, val_loss = self.eval_model(len(self.val_dataset))
 
@@ -151,7 +157,6 @@ class ExpBase:
                 torch.save(self.model.state_dict(), 'best_model_state.bin')
             
         summary(self.model, depth=4)
-        # self.model.load_state_dict(torch.load('best_model_state.bin'))
 
         if os.path.exists('best_model_state.bin'):
             self.model.load_state_dict(torch.load('best_model_state.bin'))
