@@ -13,6 +13,7 @@ from model import Bertmodel
 from dataset import CustomDataset
 from hydra.utils import to_absolute_path
 from .utils import quadratic_weighted_kappa
+from torchinfo import summary
 
 logger = logging.getLogger(__name__)
 
@@ -149,7 +150,7 @@ class ExpBase:
                 self.best_kappa = val_kappa
                 torch.save(self.model.state_dict(), 'best_model_state.bin')
             
-        
+        summary(self.model, depth=4)
         # self.model.load_state_dict(torch.load('best_model_state.bin'))
 
         if os.path.exists('best_model_state.bin'):

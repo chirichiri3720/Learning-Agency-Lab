@@ -15,14 +15,14 @@ class CustomDataset():
         # Tokenizer
         self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
         self.max_len = 512
-        self.batch_size = 64
+        self.batch_size = 10
 
         # Load data
         self.train = pd.read_csv(to_absolute_path("datasets/train.csv"))
         self.test = pd.read_csv(to_absolute_path("datasets/test.csv"))
 
         # データ削減
-        self.train = self.train[:5000]
+        self.train = self.train[:100]
 
         self.feature_column = 'full_text'
         self.target_column = 'score'
