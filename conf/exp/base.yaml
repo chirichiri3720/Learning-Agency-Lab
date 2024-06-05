@@ -1,2 +1,1 @@
-n_splits: 10
-verbose: 1
+epochs: 1
