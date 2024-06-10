@@ -1,13 +1,15 @@
 import pandas as pd
 import torch
 from torch.utils.data import Dataset, DataLoader
-from transformers import BertTokenizer, BertForSequenceClassification, AdamW, get_linear_schedule_with_warmup
+from transformers import BertTokenizer, AutoTokenizer
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 import numpy as np
 
 from hydra.utils import to_absolute_path
 from .dataset import EssayDataset
+
+from tokenizers import AddedToken
 
 class CustomDataset():
     def __init__(
@@ -19,14 +21,16 @@ class CustomDataset():
         feature_column: str = 'full_text',
         target_column: str = 'score',
         num_labels: int = 6,
+        tokenizer_name : str = 'microsoft/deberta-v3-small',
         **kwargs
     ):
         # Load data
         self.train = pd.read_csv(to_absolute_path("datasets/train.csv"))
         self.test = pd.read_csv(to_absolute_path("datasets/test.csv"))
 
-        # Tokenizer
-        self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+        # self.tokenizer = self.get_tokenizer(tokenizer_name)
+        self.tokenizer = AutoTokenizer.from_pretrained('microsoft/deberta-v3-small')
+        self.tokenizer.add_tokens([AddedToken("\n", normalized=False)])
         self.seed = seed
         self.max_len = max_len
         self.batch_size =  batch_size
@@ -37,7 +41,7 @@ class CustomDataset():
         self.test = pd.read_csv(to_absolute_path("datasets/test.csv"))
 
         # データ削減
-        self.train = self.train[:10]
+        self.train = self.train[:4]
 
         self.feature_column = feature_column
         self.target_column = target_column
@@ -60,6 +64,16 @@ class CustomDataset():
         test_loader = DataLoader(test_dataset, batch_size=self.batch_size)
         
         return train_dataset, val_dataset, train_loader, val_loader, test_loader
+    
+    def get_tokenizer(self, tokenizer_name):
+        if tokenizer_name == 'microsoft/deberta-v3-small':
+            tokenizer = AutoTokenizer.from_pretrained('microsoft/deberta-v3-small')
+            tokenizer.add_tokens([AddedToken("\n", normalized=False)])
+        elif tokenizer_name == 'bert-base-uncased':
+            tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+        else:
+            raise KeyError(f"{tokenizer_name} is not defined.")
+        return tokenizer
 
 class V0(CustomDataset):
     def __init__(self, **kwargs):
