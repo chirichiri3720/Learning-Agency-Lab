@@ -6,6 +6,7 @@ import pandas as pd
 
 import torch
 import os
+import torch.nn as nn
 
 from transformers import AdamW, get_linear_schedule_with_warmup
 from torch.nn import CrossEntropyLoss
@@ -13,9 +14,11 @@ from model import Bertmodel
 import dataset.customdataset as customdataset
 from dataset import CustomDataset
 from hydra.utils import to_absolute_path
-from .utils import quadratic_weighted_kappa, set_seed
+from .utils import set_seed
+from .optimizers import get_optimizer_grouped_parameters
 from sklearn.metrics import cohen_kappa_score
 from torchinfo import summary
+import tqdm
 
 from model import get_classifier
 
@@ -52,7 +55,7 @@ class ExpBase:
         for name, param in self.model.named_parameters():
             param.requires_grad = False
 
-        for name, param in self.model.model.bert.encoder.layer[-1].named_parameters():
+        for name, param in self.model.model.bert.encoder.layer.named_parameters():
             param.requires_grad = True
         
         for name, param in self.model.named_parameters():
@@ -62,7 +65,7 @@ class ExpBase:
     def train_epoch(self,n_examples):
         self.model.train()
         losses = []
-        for d in self.train_loader:
+        for d in tqdm.tqdm(self.train_loader):
             input_ids = d["input_ids"].to(self.device)
             attention_mask = d["attention_mask"].to(self.device)
             labels = d["label"].to(self.device)
@@ -87,7 +90,7 @@ class ExpBase:
         losses = []
         true_labels = []
         pred_labels = []
-        # correct_predictions = 0
+        
         with torch.no_grad():
             for d in self.val_loader:
                 input_ids = d["input_ids"].to(self.device)
@@ -106,7 +109,6 @@ class ExpBase:
                 pred_labels.extend(preds.cpu().numpy())
                 losses.append(loss.item())
 
-        # kappa = quadratic_weighted_kappa(true_labels, pred_labels)
         kappa = cohen_kappa_score(true_labels,pred_labels,weights='quadratic')
         return kappa, np.mean(losses)
     
@@ -144,12 +146,16 @@ class ExpBase:
             num_labels=self.num_labels,
             seed=self.seed
         )
+        # self.add_layer()
+
         # Optimizer and scheduler
-        self.optimizer = AdamW(self.model.parameters(), lr=2e-5, correct_bias=False)
+        optimizer_grouped_parameters = get_optimizer_grouped_parameters(self.model, lr=2e-5,  weight_decay=0.01, lr_decay=0.95)
+        self.optimizer = AdamW(optimizer_grouped_parameters)
         self.total_steps = len(self.train_loader) * self.epochs
         self.scheduler = get_linear_schedule_with_warmup(self.optimizer, num_warmup_steps=0, num_training_steps=self.total_steps)
 
         logger.info(f"model name: {self.model_name} device: {self.device}")
+        # self.encoder_train()
 
         for epoch in range(self.epochs):
             logger.info(f'Epoch {epoch + 1}/{self.epochs}')
@@ -187,6 +193,24 @@ class ExpBase:
     def get_model_config(self, *args, **kwargs):
         raise NotImplementedError()
 
+    def add_layer(self):
+        hidden_size = self.model.model.config.hidden_size if hasattr(self.model.model, 'config') else 768  # or any appropriate default
+
+        # Check if the classifier exists and is linear
+        if hasattr(self.model.model, 'classifier') and isinstance(self.model.model.classifier, nn.Linear):
+            in_features = self.model.model.classifier.in_features
+            out_features = self.model.model.classifier.out_features
+
+            # New sequential classifier with additional layer
+            self.model.model.classifier = nn.Sequential(
+                nn.Linear(in_features, hidden_size),
+                nn.ReLU(),
+                nn.Linear(hidden_size, out_features)
+            )
+        else:
+            raise AttributeError("The model does not have a compatible classifier to add a layer to.")
+
+        self.model.to(self.device)
    
 class ExpSimple(ExpBase):
     def __init__(self, config):
