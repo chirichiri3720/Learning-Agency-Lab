@@ -1,2 +1,2 @@
 from .experiment import ExpBase,ExpSimple
-from .utils import quadratic_weighted_kappa
+from .utils import set_seed
