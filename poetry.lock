@@ -411,6 +411,19 @@ extra = ["lxml (>=4.6)", "pydot (>=2.0)", "pygraphviz (>=1.12)", "sympy (>=1.10)
 test = ["pytest (>=7.2)", "pytest-cov (>=4.0)"]
 
 [[package]]
+name = "nn"
+version = "0.1.1"
+description = "A neural network library built on top of TensorFlow for quickly building deep learning models."
+optional = false
+python-versions = ">=3.6"
+files = [
+    {file = "nn-0.1.1.tar.gz", hash = "sha256:1c364054b0859d97ba1b600c95eb2992ef55701e8eeb6a3911db86b868937967"},
+]
+
+[package.extras]
+tests = ["pytest", "pytest-mock", "tensorflow (>=2.0)"]
+
+[[package]]
 name = "numpy"
 version = "1.26.4"
 description = "Fundamental package for array computing in Python"
@@ -1559,4 +1572,4 @@ zstd = ["zstandard (>=0.18.0)"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.10"
-content-hash = "d9e117ca917fd2bae836aa9567a9ad60e47a36a92c6c1de912fc0dd9bd06ba0c"
+content-hash = "8e87de75ba51e4e630c90c816b9b4049b659811f9309fe4605071e7681334c17"
