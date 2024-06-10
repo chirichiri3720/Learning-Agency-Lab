@@ -9,17 +9,16 @@ import os
 
 from transformers import AdamW, get_linear_schedule_with_warmup
 from torch.nn import CrossEntropyLoss
-from model import Bertmodel
 import dataset.customdataset as customdataset
 from dataset import CustomDataset
 from hydra.utils import to_absolute_path
-from .utils import quadratic_weighted_kappa, set_seed
+from .utils import set_seed
 from sklearn.metrics import cohen_kappa_score
 from torchinfo import summary
+import tqdm
 
 from model import get_classifier
 
-from sklearn.metrics import cohen_kappa_score
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +61,7 @@ class ExpBase:
     def train_epoch(self,n_examples):
         self.model.train()
         losses = []
-        for d in self.train_loader:
+        for d in tqdm.tqdm(self.train_loader):
             input_ids = d["input_ids"].to(self.device)
             attention_mask = d["attention_mask"].to(self.device)
             labels = d["label"].to(self.device)
@@ -106,7 +105,7 @@ class ExpBase:
                 pred_labels.extend(preds.cpu().numpy())
                 losses.append(loss.item())
 
-        # kappa = quadratic_weighted_kappa(true_labels, pred_labels)
+ 
         kappa = cohen_kappa_score(true_labels,pred_labels,weights='quadratic')
         return kappa, np.mean(losses)
     
@@ -144,6 +143,10 @@ class ExpBase:
             num_labels=self.num_labels,
             seed=self.seed
         )
+
+        if(self.model_name == "deberta"):
+            self.model.model.resize_token_embeddings(len(self.train_dataset.tokenizer))
+
         # Optimizer and scheduler
         self.optimizer = AdamW(self.model.parameters(), lr=2e-5, correct_bias=False)
         self.total_steps = len(self.train_loader) * self.epochs
