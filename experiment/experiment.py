@@ -10,7 +10,6 @@ import torch.nn as nn
 
 from transformers import AdamW, get_linear_schedule_with_warmup
 from torch.nn import CrossEntropyLoss
-from model import Bertmodel
 import dataset.customdataset as customdataset
 from dataset import CustomDataset
 from hydra.utils import to_absolute_path
@@ -22,7 +21,6 @@ import tqdm
 
 from model import get_classifier
 
-from sklearn.metrics import cohen_kappa_score
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +144,10 @@ class ExpBase:
             num_labels=self.num_labels,
             seed=self.seed
         )
-        # self.add_layer()
+        self.add_layer()
+
+        if(self.model_name == "deberta"):
+            self.model.model.resize_token_embeddings(len(self.train_dataset.tokenizer))
 
         # Optimizer and scheduler
         optimizer_grouped_parameters = get_optimizer_grouped_parameters(self.model, lr=2e-5,  weight_decay=0.01, lr_decay=0.95)
