@@ -8,7 +8,7 @@ hydra:
 defaults:
   - _self_
   - data: base
-  - model: bert
+  - model: deberta
   - exp: simple
 
 seed: 42
