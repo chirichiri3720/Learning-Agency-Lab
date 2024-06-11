@@ -28,9 +28,8 @@ class CustomDataset():
         self.train = pd.read_csv(to_absolute_path("datasets/train.csv"))
         self.test = pd.read_csv(to_absolute_path("datasets/test.csv"))
 
-        # self.tokenizer = self.get_tokenizer(tokenizer_name)
-        self.tokenizer = AutoTokenizer.from_pretrained('microsoft/deberta-v3-small')
-        self.tokenizer.add_tokens([AddedToken("\n", normalized=False)])
+        self.tokenizer = self.get_tokenizer(tokenizer_name)
+
         self.seed = seed
         self.max_len = max_len
         self.batch_size =  batch_size
