@@ -144,14 +144,15 @@ class ExpBase:
             num_labels=self.num_labels,
             seed=self.seed
         )
-        self.add_layer()
+        # self.add_layer()
 
         if(self.model_name == "deberta"):
             self.model.model.resize_token_embeddings(len(self.train_dataset.tokenizer))
 
         # Optimizer and scheduler
-        optimizer_grouped_parameters = get_optimizer_grouped_parameters(self.model, lr=2e-5,  weight_decay=0.01, lr_decay=0.95)
-        self.optimizer = AdamW(optimizer_grouped_parameters)
+        # optimizer_grouped_parameters = get_optimizer_grouped_parameters(self.model, lr=2e-5,  weight_decay=0.01, lr_decay=0.95)
+        # self.optimizer = AdamW(optimizer_grouped_parameters)
+        self.optimizer = AdamW(self.model.parameters(), lr=2e-5, correct_bias=False)
         self.total_steps = len(self.train_loader) * self.epochs
         self.scheduler = get_linear_schedule_with_warmup(self.optimizer, num_warmup_steps=0, num_training_steps=self.total_steps)
 
