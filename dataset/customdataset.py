@@ -92,7 +92,6 @@ class V1(CustomDataset):
             "Instruction: Evaluating the text and calculating content and wording score. Text: "
         ]
         self.train[self.feature_column] = prompts[0] + self.train[self.feature_column]
-        # self.test[self.feature_column] = self.test[self.feature_column] + " " + prompts[0]
-        self.train.to_csv("train_prompts.csv", index=False)
-        exit()
+        self.test[self.feature_column] = prompts[0] + self.test[self.feature_column]
+
 
