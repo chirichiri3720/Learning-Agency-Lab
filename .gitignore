@@ -162,9 +162,12 @@ cython_debug/
 # add by kou and kusu
 datasets/
 outputs/
+microsoft/
 packages.zip
 bert-base-uncased-tokenizer.zip
 bert-base-uncased-model.zip
 bert-base-uncased-tokenizer
 bert-base-uncased-model
+deberta.zip
+deberta.py
 
