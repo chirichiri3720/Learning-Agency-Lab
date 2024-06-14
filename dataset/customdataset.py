@@ -21,7 +21,7 @@ class CustomDataset():
         feature_column: str = 'full_text',
         target_column: str = 'score',
         num_labels: int = 6,
-        tokenizer_name : str = 'microsoft/deberta-v3-small',
+        tokenizer_name : str = 'microsoft/deberta-v3-base',
         **kwargs
     ):
         # Load data
@@ -65,15 +65,34 @@ class CustomDataset():
         return train_dataset, val_dataset, train_loader, val_loader, test_loader
     
     def get_tokenizer(self, tokenizer_name):
-        if tokenizer_name == 'microsoft/deberta-v3-small':
-            tokenizer = AutoTokenizer.from_pretrained('microsoft/deberta-v3-small')
+        if tokenizer_name == 'microsoft/deberta-v3-base':
+            tokenizer = AutoTokenizer.from_pretrained('microsoft/deberta-v3-base')
             tokenizer.add_tokens([AddedToken("\n", normalized=False)])
+            tokenizer.add_tokens([AddedToken(" "*2, normalized=False)])
         elif tokenizer_name == 'bert-base-uncased':
             tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
         else:
             raise KeyError(f"{tokenizer_name} is not defined.")
         return tokenizer
+    
+    def add_prompts(self):
+        ...
 
 class V0(CustomDataset):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+
+class V1(CustomDataset):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.add_prompts()
+    
+    def add_prompts(self):
+        prompts = [
+            "Instruction: Evaluating the text and calculating content and wording score. Text: "
+        ]
+        self.train[self.feature_column] = prompts[0] + self.train[self.feature_column]
+        # self.test[self.feature_column] = self.test[self.feature_column] + " " + prompts[0]
+        self.train.to_csv("train_prompts.csv", index=False)
+        exit()
+
