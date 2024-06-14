@@ -48,17 +48,21 @@ class ExpBase:
         # Loss function
         self.loss_fn = CrossEntropyLoss().to(self.device)
 
-    def encoder_train(self):
+    def choice_layer(self):
 
         for name, param in self.model.named_parameters():
             param.requires_grad = False
 
-        for name, param in self.model.model.bert.encoder.layer.named_parameters():
+        for name, param in self.model.model.deberta.encoder.layer[-1].named_parameters():
+        # for name, param in self.model.model.bert.encoder.layer[-1].named_parameters():  
             param.requires_grad = True
         
-        for name, param in self.model.named_parameters():
-            if param.requires_grad : 
-                print(name)
+    def print_model_parameters(self, indent=0):
+            if hasattr(self.model, 'named_parameters'):
+                for name, param in self.model.named_parameters():
+                    print(f"{name}: {param.size()}")
+            else:
+                    print("The model does not have named_parameters method")
 
     def train_epoch(self,n_examples):
         self.model.train()
@@ -114,6 +118,8 @@ class ExpBase:
         self.model.eval()
         predictions = []
 
+        start_time = time()
+    
         with torch.no_grad():
             for d in self.test_loader:
                 input_ids = d["input_ids"].to(self.device)
@@ -132,7 +138,7 @@ class ExpBase:
 
 
         predictions = [pred.item() for pred in predictions]
-
+        print(time()-start_time)
         return predictions
 
     def run(self):
@@ -144,10 +150,10 @@ class ExpBase:
             num_labels=self.num_labels,
             seed=self.seed
         )
-        # self.add_layer()
+        self.model.add_layer(additional_layers=1)
 
         if(self.model_name == "deberta"):
-            self.model.model.resize_token_embeddings(len(self.train_dataset.tokenizer))
+            self.model.resize_token_embeddings(len(self.train_dataset.tokenizer))
 
         # Optimizer and scheduler
         # optimizer_grouped_parameters = get_optimizer_grouped_parameters(self.model, lr=2e-5,  weight_decay=0.01, lr_decay=0.95)
@@ -157,7 +163,7 @@ class ExpBase:
         self.scheduler = get_linear_schedule_with_warmup(self.optimizer, num_warmup_steps=0, num_training_steps=self.total_steps)
 
         logger.info(f"model name: {self.model_name} device: {self.device}")
-        # self.encoder_train()
+        self.choice_layer()
 
         for epoch in range(self.epochs):
             logger.info(f'Epoch {epoch + 1}/{self.epochs}')
@@ -175,6 +181,7 @@ class ExpBase:
                 torch.save(self.model.state_dict(), 'best_model_state.bin')
             
         summary(self.model, depth=4)
+        self.print_model_parameters()
 
         if os.path.exists('best_model_state.bin'):
             self.model.load_state_dict(torch.load('best_model_state.bin'))
@@ -194,25 +201,6 @@ class ExpBase:
     
     def get_model_config(self, *args, **kwargs):
         raise NotImplementedError()
-
-    def add_layer(self):
-        hidden_size = self.model.model.config.hidden_size if hasattr(self.model.model, 'config') else 768  # or any appropriate default
-
-        # Check if the classifier exists and is linear
-        if hasattr(self.model.model, 'classifier') and isinstance(self.model.model.classifier, nn.Linear):
-            in_features = self.model.model.classifier.in_features
-            out_features = self.model.model.classifier.out_features
-
-            # New sequential classifier with additional layer
-            self.model.model.classifier = nn.Sequential(
-                nn.Linear(in_features, hidden_size),
-                nn.ReLU(),
-                nn.Linear(hidden_size, out_features)
-            )
-        else:
-            raise AttributeError("The model does not have a compatible classifier to add a layer to.")
-
-        self.model.to(self.device)
    
 class ExpSimple(ExpBase):
     def __init__(self, config):
