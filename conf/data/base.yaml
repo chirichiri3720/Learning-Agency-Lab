@@ -1,4 +1,4 @@
-name: V0
+name: V1
 
 max_len: 1024
 batch_size: 4

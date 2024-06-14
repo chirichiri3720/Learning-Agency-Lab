@@ -74,7 +74,24 @@ class CustomDataset():
         else:
             raise KeyError(f"{tokenizer_name} is not defined.")
         return tokenizer
+    
+    def add_prompts(self):
+        ...
 
 class V0(CustomDataset):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+
+class V1(CustomDataset):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.add_prompts()
+    
+    def add_prompts(self):
+        prompts = [
+            "Instruction: Evaluating the text and calculating content and wording score. Text: "
+        ]
+        self.train[self.feature_column] = prompts[0] + self.train[self.feature_column]
+        self.test[self.feature_column] = prompts[0] + self.test[self.feature_column]
+
+
