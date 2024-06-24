@@ -21,6 +21,9 @@ import tqdm
 
 from model import get_classifier
 
+from torch.cuda.amp import autocast,GradScaler
+
+scaler = GradScaler()
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +31,7 @@ class ExpBase:
     def __init__(self, config):
         set_seed(config.seed)
         self.seed = config.seed
-
+        self.scaler = GradScaler()
         self.model_name = config.model.name
         self.model_config = config.model.params
         self.exp_config = config.exp
@@ -53,9 +56,12 @@ class ExpBase:
         for name, param in self.model.named_parameters():
             param.requires_grad = False
 
-        for name, param in self.model.model.deberta.encoder.layer[-1].named_parameters():
+        for name, param in self.model.model.deberta.encoder.layer.named_parameters():
         # for name, param in self.model.model.bert.encoder.layer[-1].named_parameters():  
             param.requires_grad = True
+        for name, param in self.model.named_parameters():
+            if param.requires_grad : 
+                print(name)
         
     def print_model_parameters(self, indent=0):
             if hasattr(self.model, 'named_parameters'):
@@ -72,18 +78,33 @@ class ExpBase:
             attention_mask = d["attention_mask"].to(self.device)
             labels = d["label"].to(self.device)
 
-            outputs = self.model(
-                input_ids=input_ids,
-                attention_mask=attention_mask
-            )
+            # outputs = self.model(
+            #     input_ids=input_ids,
+            #     attention_mask=attention_mask
+            # )
 
-            loss = self.loss_fn(outputs.logits, labels)
+            # loss = self.loss_fn(outputs.logits, labels)
+            # losses.append(loss.item())
+
+            # loss.backward()
+            # self.optimizer.step()
+            # self.scheduler.step()
+            self.optimizer.zero_grad()
+            with autocast():
+                outputs = self.model(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask
+                )
+                loss = self.loss_fn(outputs.logits, labels)
+
             losses.append(loss.item())
 
-            loss.backward()
-            self.optimizer.step()
+            self.scaler.scale(loss).backward()
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
             self.scheduler.step()
             self.optimizer.zero_grad()
+
             
         return np.mean(losses)
     
@@ -117,8 +138,6 @@ class ExpBase:
     def get_predictions(self):
         self.model.eval()
         predictions = []
-
-        start_time = time()
     
         with torch.no_grad():
             for d in self.test_loader:
@@ -138,7 +157,6 @@ class ExpBase:
 
 
         predictions = [pred.item() for pred in predictions]
-        print(time()-start_time)
         return predictions
 
     def run(self):
@@ -150,20 +168,20 @@ class ExpBase:
             num_labels=self.num_labels,
             seed=self.seed
         )
-        self.model.add_layer(additional_layers=1)
+        # self.model.add_layer(additional_layers=1)
 
         if(self.model_name == "deberta"):
             self.model.resize_token_embeddings(len(self.train_dataset.tokenizer))
 
         # Optimizer and scheduler
-        # optimizer_grouped_parameters = get_optimizer_grouped_parameters(self.model, lr=2e-5,  weight_decay=0.01, lr_decay=0.95)
+        # optimizer_grouped_parameters = get_optimizer_grouped_parameters(self.model,self.model_name, lr=2e-5,  weight_decay=0.01, lr_decay=0.95)
         # self.optimizer = AdamW(optimizer_grouped_parameters)
         self.optimizer = AdamW(self.model.parameters(), lr=2e-5, correct_bias=False)
         self.total_steps = len(self.train_loader) * self.epochs
         self.scheduler = get_linear_schedule_with_warmup(self.optimizer, num_warmup_steps=0, num_training_steps=self.total_steps)
 
         logger.info(f"model name: {self.model_name} device: {self.device}")
-        self.choice_layer()
+        # self.choice_layer()
 
         for epoch in range(self.epochs):
             logger.info(f'Epoch {epoch + 1}/{self.epochs}')
@@ -180,8 +198,8 @@ class ExpBase:
                 self.best_kappa = val_kappa
                 torch.save(self.model.state_dict(), 'best_model_state.bin')
             
-        summary(self.model, depth=4)
-        self.print_model_parameters()
+        # summary(self.model, depth=4)
+        # self.print_model_parameters()
 
         if os.path.exists('best_model_state.bin'):
             self.model.load_state_dict(torch.load('best_model_state.bin'))

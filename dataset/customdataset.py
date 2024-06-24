@@ -40,7 +40,7 @@ class CustomDataset():
         self.test = pd.read_csv(to_absolute_path("datasets/test.csv"))
 
         # データ削減
-        self.train = self.train[:5000]
+        # self.train = self.train[:500]
 
         self.feature_column = feature_column
         self.target_column = target_column
@@ -71,6 +71,16 @@ class CustomDataset():
             tokenizer.add_tokens([AddedToken(" "*2, normalized=False)])
         elif tokenizer_name == 'bert-base-uncased':
             tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+        elif tokenizer_name == 'roberta-base':
+            tokenizer = AutoTokenizer.from_pretrained('roberta-base') 
+        elif tokenizer_name == 'distilbert':
+            tokenizer = AutoTokenizer.from_pretrained('distilbert-base-uncased')
+        elif tokenizer_name == 'xlnet':
+            tokenizer = AutoTokenizer.from_pretrained('xlnet-base-cased')
+        elif tokenizer_name == 'albert':
+            tokenizer = AutoTokenizer.from_pretrained('albert-base-v2')
+        elif tokenizer_name == 'electora':
+            tokenizer = AutoTokenizer.from_pretrained('google/electra-base-discriminator')
         else:
             raise KeyError(f"{tokenizer_name} is not defined.")
         return tokenizer

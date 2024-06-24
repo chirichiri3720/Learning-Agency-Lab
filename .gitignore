@@ -168,6 +168,8 @@ bert-base-uncased-tokenizer.zip
 bert-base-uncased-model.zip
 bert-base-uncased-tokenizer
 bert-base-uncased-model
+deberta-v3-small-model.zip
+deberta-v3-large.zip
 deberta.zip
 deberta.py
 
