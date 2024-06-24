@@ -3,8 +3,9 @@ from torch.utils.data import Dataset
 
 # Dataset class
 class EssayDataset(Dataset):
-    def __init__(self, texts, labels=None, tokenizer=None, max_len=512):
+    def __init__(self, texts, index, labels=None, tokenizer=None, max_len=512):
         self.texts = texts
+        self.index = index
         self.labels = labels
         self.tokenizer = tokenizer
         self.max_len = max_len
@@ -14,6 +15,8 @@ class EssayDataset(Dataset):
 
     def __getitem__(self, idx):
         text = self.texts[idx]
+        original_idx = self.index[idx]
+
         inputs = self.tokenizer.encode_plus(
             text,
             add_special_tokens=True,
@@ -31,11 +34,13 @@ class EssayDataset(Dataset):
             return {
                 'input_ids': input_ids,
                 'attention_mask': attention_mask,
-                'label': label
+                'label': label,
+                'idx': original_idx
             }
         else:
             return {
                 'input_ids': input_ids,
-                'attention_mask': attention_mask
+                'attention_mask': attention_mask,
+                'idx': original_idx
             }
 
