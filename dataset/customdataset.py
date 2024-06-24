@@ -11,6 +11,18 @@ from .dataset import EssayDataset
 
 from tokenizers import AddedToken
 
+# from collections import Counter
+import re
+# import numpy as np
+# import pandas as pd
+# import matplotlib.pyplot as plt
+# import seaborn as sns
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.cluster import KMeans
+# import nltk
+# from nltk.corpus import stopwords
+# import warnings
+
 class CustomDataset():
     def __init__(
         self,
@@ -40,7 +52,7 @@ class CustomDataset():
         self.test = pd.read_csv(to_absolute_path("datasets/test.csv"))
 
         # データ削減
-        self.train = self.train[:4]
+        # self.train = self.train[:4]
 
         self.feature_column = feature_column
         self.target_column = target_column
@@ -51,11 +63,21 @@ class CustomDataset():
     def prepare_loaders(self):
         # Prepare datasets
         X_train, X_val, y_train, y_val = train_test_split(
-            self.train[self.feature_column], self.train[self.target_column], test_size=self.test_size, random_state=self.seed
+            self.train.drop(columns=[self.target_column]), self.train[self.target_column], test_size=self.test_size, random_state=self.seed
         )
-        train_dataset = EssayDataset(X_train.tolist(), y_train.tolist(), self.tokenizer, self.max_len)
-        val_dataset = EssayDataset(X_val.tolist(), y_val.tolist(), self.tokenizer, self.max_len)
-        test_dataset = EssayDataset(self.test[self.feature_column].tolist(), tokenizer=self.tokenizer, max_len=self.max_len)
+
+        train_texts = X_train[self.feature_column].tolist()
+        val_texts = X_val[self.feature_column].tolist()
+        test_texts = self.test[self.feature_column].tolist()
+
+        train_id = X_train['essay_id'].tolist()
+        val_id = X_val['essay_id'].tolist()
+        test_id = self.test['essay_id'].tolist()
+
+   
+        train_dataset = EssayDataset(train_texts, train_id, y_train.tolist(), self.tokenizer, self.max_len)
+        val_dataset = EssayDataset(val_texts, val_id, y_val.tolist(), self.tokenizer, self.max_len)
+        test_dataset = EssayDataset(test_texts, test_id, tokenizer=self.tokenizer, max_len=self.max_len)
 
         # Prepare dataloaders
         train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True)
@@ -93,5 +115,95 @@ class V1(CustomDataset):
         ]
         self.train[self.feature_column] = prompts[0] + self.train[self.feature_column]
         self.test[self.feature_column] = prompts[0] + self.test[self.feature_column]
+
+class V2(CustomDataset):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.add_prompts()
+        self.add_features()
+    
+    def add_prompts(self):
+        prompts = [
+            "Instruction: Evaluating the text and calculating content and wording score. Text: "
+        ]
+        self.train[self.feature_column] = prompts[0] + self.train[self.feature_column]
+        self.test[self.feature_column] = prompts[0] + self.test[self.feature_column]
+    
+    # def count_stopwords(text, stopwords):
+    #     '''Function that count a number of words which is not stopwords of nltk. '''
+    #     text = text.split()
+    #     stopwords_length = len([t for t in text if t in stopwords])
+    #     return stopwords_length
+    
+    def add_features(self):
+        df_concat = pd.concat([self.train, self.test])
+
+        df_concat['letters'] = df_concat['full_text'].apply(lambda x: len(x))
+
+        df_concat['words'] = df_concat['full_text'].apply(lambda x: len(x.split()))
+
+        df_concat['unique_words'] = df_concat['full_text'].apply(lambda x: len(set(x.split())))
+
+        df_concat['sentences'] = df_concat['full_text'].apply(lambda x: len(x.split('.')))
+
+        df_concat['paragraph'] = df_concat['full_text'].apply(lambda x: len(x.split('\n\n')))
+
+        # df['stopwords'] = df['full_text'].apply(count_stopwords, args=(stopwords,))
+
+        # df['not_stopwords'] = df['words'] - df['stopwords']
+
+        df_concat['cleaned_text'] = df_concat['full_text'].apply(self.dataPreprocessing)
+
+        vectorizer = TfidfVectorizer(
+            tokenizer=lambda x: x,
+            preprocessor=lambda x: x,
+            token_pattern=None,
+            strip_accents='unicode',
+            analyzer = 'word',
+            ngram_range=(1,3),
+            min_df=0.05,
+            max_df=0.95,
+            sublinear_tf=True,
+        )
+
+        train_tfid = vectorizer.fit_transform([i for i in df_concat['cleaned_text']])
+
+        n_clusters = 7
+        kmeans = KMeans(n_clusters=n_clusters, random_state=self.seed).fit(train_tfid.toarray())
+        labels = kmeans.predict(train_tfid.toarray())
+        df_concat['group'] = labels
+
+
+
+        self.train = df_concat[:len(self.train)]
+        self.test = df_concat[len(self.train):]
+        self.test.drop(self.target_column, axis=1, inplace=True)
+        self.feature_columns = ['letters', 'words', 'unique_words', 'sentences', 'paragraph', 'group']
+
+    def removeHTML(self, x):
+        html=re.compile(r'<.*?>')
+        return html.sub(r'',x)
+
+    def dataPreprocessing(self, x):
+        # Convert words to lowercase
+        x = x.lower()
+        # Remove HTML
+        x = self.removeHTML(x)
+        # Delete strings starting with @
+        x = re.sub("@\w+", '',x)
+        # Delete Numbers
+        x = re.sub("'\d+", '',x)
+        x = re.sub("\d+", '',x)
+        # Delete URL
+        x = re.sub("http\w+", '',x)
+        # Replace consecutive empty spaces with a single space character
+        x = re.sub(r"\s+", " ", x)
+        # Replace consecutive commas and periods with one comma and period character
+        x = re.sub(r"\.+", ".", x)
+        x = re.sub(r"\,+", ",", x)
+        # Remove empty characters at the beginning and end
+        x = x.strip()
+        return x
+    
 
 
