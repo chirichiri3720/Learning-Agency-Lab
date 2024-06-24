@@ -13,13 +13,15 @@ from torch.nn import CrossEntropyLoss
 import dataset.customdataset as customdataset
 from dataset import CustomDataset
 from hydra.utils import to_absolute_path
-from .utils import set_seed
+from .utils import set_seed, cal_kappa_score
 from .optimizers import get_optimizer_grouped_parameters
 from sklearn.metrics import cohen_kappa_score
 from torchinfo import summary
 import tqdm
 
-from model import get_classifier
+from model import get_classifier, get_tree_classifier
+
+from sklearn.model_selection import StratifiedKFold, train_test_split
 
 from torch.cuda.amp import autocast,GradScaler
 
@@ -44,6 +46,9 @@ class ExpBase:
         self.best_kappa = 0
 
         df: CustomDataset = getattr(customdataset, self.data_config.name)(seed=self.seed, **self.data_config)
+        self.train, self.test = df.train, df.test
+        self.feature_columns = df.feature_columns
+        self.target_column = df.target_column
         self.train_dataset, self.val_dataset, self.train_loader, self.val_loader, self.test_loader = df.prepare_loaders()
         self.id = df.id
         self.num_labels = df.num_labels
@@ -73,30 +78,21 @@ class ExpBase:
     def train_epoch(self,n_examples):
         self.model.train()
         losses = []
+        self.llm_pred_data = self.train[['essay_id', 'score']]
+
         for d in tqdm.tqdm(self.train_loader):
             input_ids = d["input_ids"].to(self.device)
             attention_mask = d["attention_mask"].to(self.device)
             labels = d["label"].to(self.device)
 
-            # outputs = self.model(
-            #     input_ids=input_ids,
-            #     attention_mask=attention_mask
-            # )
+            outputs = self.model(
+                input_ids=input_ids,
+                attention_mask=attention_mask
+            )
 
-            # loss = self.loss_fn(outputs.logits, labels)
-            # losses.append(loss.item())
 
-            # loss.backward()
-            # self.optimizer.step()
-            # self.scheduler.step()
-            self.optimizer.zero_grad()
-            with autocast():
-                outputs = self.model(
-                    input_ids=input_ids,
-                    attention_mask=attention_mask
-                )
-                loss = self.loss_fn(outputs.logits, labels)
 
+            loss = self.loss_fn(outputs.logits, labels)
             losses.append(loss.item())
 
             self.scaler.scale(loss).backward()
@@ -171,7 +167,7 @@ class ExpBase:
         # self.model.add_layer(additional_layers=1)
 
         if(self.model_name == "deberta"):
-            self.model.resize_token_embeddings(len(self.train_dataset.tokenizer))
+            self.model.model.resize_token_embeddings(len(self.train_dataset.tokenizer))
 
         # Optimizer and scheduler
         # optimizer_grouped_parameters = get_optimizer_grouped_parameters(self.model,self.model_name, lr=2e-5,  weight_decay=0.01, lr_decay=0.95)
@@ -225,5 +221,76 @@ class ExpSimple(ExpBase):
         super().__init__(config)
     
     def get_model_config(self, *args, **kwargs):
-        return self.model_config    
+        return self.model_config
+
+class ExpStacking(ExpBase):
+    def __init__(self, config):
+        super().__init__(config)
+
+        self.input_dim = 6
+        self.output_dim = 6
+        self.n_splits = 10
+
+    def each_fold(self, i_fold, train_data, val_data):
+        x, y = self.get_x_y(train_data)
+
+        model_config = self.get_model_config(i_fold=i_fold, x=x, y=y, val_data=val_data)
+        model = get_tree_classifier(
+            self.model_name,
+            input_dim=self.input_dim,
+            output_dim=self.output_dim,
+            model_config=model_config,
+        )
+        start = time()
+        model.fit(
+            x,
+            y,
+            eval_set=(val_data[self.feature_columns], val_data[self.target_column].values.squeeze()),
+        )
+        end = time() - start
+        logger.info(f"[Fit {self.model_name}] Time: {end}")
+        return model, end
+    
+    def run(self):
+        self.train['score'] = self.train['score']-1
+        
+
+        skf = StratifiedKFold(n_splits=self.n_splits, shuffle=True, random_state=self.seed)
+        y_test_pred_all = []
+        score_all = 0
+        for i_fold, (train_idx, val_idx) in enumerate(skf.split(self.train, self.train[self.target_column])):
+
+            train_data, val_data = self.train.iloc[train_idx], self.train.iloc[val_idx]
+            model, time = self.each_fold(i_fold, train_data, val_data)
+
+            kappa = cal_kappa_score(model, val_data, self.feature_columns, self.target_column)
+
+            logger.info(
+                f"[{self.model_name} results ({i_fold+1} / {self.n_splits})] kappa score: {kappa}"
+            )
+
+            score_all += kappa
+
+
+            y_test_pred_all.append(
+                model.predict_proba(self.test[self.feature_columns]).reshape(-1, 1, 6)
+            )
+        
+        y_test_pred_all = np.argmax(np.concatenate(y_test_pred_all, axis=1).mean(axis=1), axis=1)
+        submit_df = pd.DataFrame(self.id)
+        submit_df['score'] = y_test_pred_all+1
+
+        print(submit_df)
+        submit_df.to_csv("submit.csv", index=False)
+
+        logger.info(f" {self.model_name} score average: {score_all/self.n_splits} ")
+
+    def get_model_config(self, *args, **kwargs):
+            return self.model_config
+
+    def get_x_y(self, train_data):
+        x, y = train_data[self.feature_columns], train_data[self.target_column].values.squeeze()
+        return x, y
+
+
 
