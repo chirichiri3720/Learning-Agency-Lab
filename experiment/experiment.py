@@ -54,15 +54,27 @@ class ExpBase:
         self.num_labels = df.num_labels
 
         # Loss function
-        self.loss_fn = CrossEntropyLoss().to(self.device)
+        # self.loss_fn = CrossEntropyLoss().to(self.device)
+        
+        class_counts = self.train[self.target_column].value_counts()
+        class_weights = 1. / class_counts
+        class_weights = class_weights / class_weights.sum()
+
+        # クラス重みを設定した損失関数
+        weights = torch.tensor(class_weights.values, dtype=torch.float)
+
+
+        # Loss function
+        self.loss_fn = CrossEntropyLoss(weight=weights).to(self.device)
+
 
     def choice_layer(self):
 
         for name, param in self.model.named_parameters():
             param.requires_grad = False
 
-        for name, param in self.model.model.deberta.encoder.layer.named_parameters():
-        # for name, param in self.model.model.bert.encoder.layer[-1].named_parameters():  
+        # for name, param in self.model.model.deberta.encoder.layer.named_parameters():
+        for name, param in self.model.model.bert.encoder.layer[10:].named_parameters():  
             param.requires_grad = True
         for name, param in self.model.named_parameters():
             if param.requires_grad : 
@@ -90,7 +102,9 @@ class ExpBase:
                 attention_mask=attention_mask
             )
 
-
+            for idx, essay_id in enumerate(d["idx"]):
+                score = int(outputs.logits[idx].argmax().item() + 1)
+                self.llm_pred_data.loc[self.llm_pred_data['essay_id'] == essay_id, 'prediction_score'] = score 
 
             loss = self.loss_fn(outputs.logits, labels)
             losses.append(loss.item())
@@ -121,12 +135,17 @@ class ExpBase:
                     attention_mask=attention_mask
                 )
 
+                for idx, essay_id in enumerate(d["idx"]):
+                    score = int (outputs.logits[idx].argmax().item() + 1)
+                    self.llm_pred_data.loc[self.llm_pred_data['essay_id'] == essay_id, 'score'] = score 
+
                 _, preds = torch.max(outputs.logits, dim=1)
                 loss = self.loss_fn(outputs.logits, labels)
 
                 true_labels.extend(labels.cpu().numpy())
                 pred_labels.extend(preds.cpu().numpy())
                 losses.append(loss.item())
+            self.llm_pred_data.to_csv('prediction_score.csv', index=False)
 
         kappa = cohen_kappa_score(true_labels,pred_labels,weights='quadratic')
         return kappa, np.mean(losses)
@@ -164,20 +183,22 @@ class ExpBase:
             num_labels=self.num_labels,
             seed=self.seed
         )
-        # self.model.add_layer(additional_layers=1)
+        self.model.add_layer(additional_layers=1)
 
         if(self.model_name == "deberta"):
             self.model.model.resize_token_embeddings(len(self.train_dataset.tokenizer))
 
         # Optimizer and scheduler
-        # optimizer_grouped_parameters = get_optimizer_grouped_parameters(self.model,self.model_name, lr=2e-5,  weight_decay=0.01, lr_decay=0.95)
-        # self.optimizer = AdamW(optimizer_grouped_parameters)
-        self.optimizer = AdamW(self.model.parameters(), lr=2e-5, correct_bias=False)
+        optimizer_grouped_parameters = get_optimizer_grouped_parameters(self.model,self.model_name, lr=2e-5,  weight_decay=0.01, lr_decay=0.95)
+        self.optimizer = AdamW(optimizer_grouped_parameters)
+        # self.optimizer = AdamW(self.model.parameters(), lr=2e-5, correct_bias=False)
         self.total_steps = len(self.train_loader) * self.epochs
         self.scheduler = get_linear_schedule_with_warmup(self.optimizer, num_warmup_steps=0, num_training_steps=self.total_steps)
 
         logger.info(f"model name: {self.model_name} device: {self.device}")
         # self.choice_layer()
+
+        best_epoch = 0
 
         for epoch in range(self.epochs):
             logger.info(f'Epoch {epoch + 1}/{self.epochs}')
@@ -190,15 +211,17 @@ class ExpBase:
             val_kappa, val_loss = self.eval_model(len(self.val_dataset))
             logger.info(f'Val loss {val_loss} kappa {val_kappa} eval time: {time() - start_time}')
             
+            torch.save(self.model.state_dict(), f'best_model_state{epoch+1}.bin')
+            
             if val_kappa >= self.best_kappa:
                 self.best_kappa = val_kappa
-                torch.save(self.model.state_dict(), 'best_model_state.bin')
-            
-        # summary(self.model, depth=4)
-        # self.print_model_parameters()
-
-        if os.path.exists('best_model_state.bin'):
-            self.model.load_state_dict(torch.load('best_model_state.bin'))
+                best_epoch = epoch  + 1
+                # torch.save(self.model.state_dict(), f'best_model_state{epoch+1}.bin')
+        print(f'Best model is {best_epoch} epoch.')
+      
+              
+        if os.path.exists(f'best_model_state{best_epoch}.bin'):
+            self.model.load_state_dict(torch.load(f'best_model_state{best_epoch}.bin'))
         else:
             logger.error("No model file found. Ensure training completes successfully.")
 
@@ -229,7 +252,7 @@ class ExpStacking(ExpBase):
 
         self.input_dim = 6
         self.output_dim = 6
-        self.n_splits = 10
+        self.n_splits = 7
 
     def each_fold(self, i_fold, train_data, val_data):
         x, y = self.get_x_y(train_data)
@@ -276,12 +299,15 @@ class ExpStacking(ExpBase):
                 model.predict_proba(self.test[self.feature_columns]).reshape(-1, 1, 6)
             )
         
-        y_test_pred_all = np.argmax(np.concatenate(y_test_pred_all, axis=1).mean(axis=1), axis=1)
-        submit_df = pd.DataFrame(self.id)
-        submit_df['score'] = y_test_pred_all+1
+        # y_test_pred_all = np.argmax(np.concatenate(y_test_pred_all, axis=1).mean(axis=1), axis=1)
+        # submit_df = pd.DataFrame(self.id)
+        # print(y_test_pred_all)
+        # print(submit_df)
+        # exit()
+        # submit_df['score'] = y_test_pred_all+1
 
-        print(submit_df)
-        submit_df.to_csv("submit.csv", index=False)
+        # print(submit_df)
+        # submit_df.to_csv("submit.csv", index=False)
 
         logger.info(f" {self.model_name} score average: {score_all/self.n_splits} ")
 

@@ -42,7 +42,7 @@ class DebertaModel(nn.Module):
         super(DebertaModel, self).__init__()
 
         self.device = device
-        config = AutoConfig.from_pretrained('microsoft/deberta-v3-base')
+        config = AutoConfig.from_pretrained('microsoft/deberta-v3-small')
         config.num_labels = num_labels
         
         # モデル設定をカスタマイズ（必要に応じて）
@@ -50,7 +50,7 @@ class DebertaModel(nn.Module):
             for key, value in model_config.items():
                 setattr(config, key, value)
         
-        self.model = AutoModelForSequenceClassification.from_pretrained('microsoft/deberta-v3-base', config=config)
+        self.model = AutoModelForSequenceClassification.from_pretrained('microsoft/deberta-v3-small', config=config)
         self.model.to(self.device)
         self.classifier = self.model.classifier
 
@@ -97,7 +97,9 @@ class RobertaModel(nn.Module):
         self.classifier = self.model.classifier
 
     def forward(self, input_ids, attention_mask):
-        return self.model(input_ids, attention_mask=attention_mask)
+        outputs = self.model(input_ids, attention_mask=attention_mask)
+        logits = outputs.logits
+        return logits
     
     def resize_token_embeddings(self, new_vocab_size):
         self.model.resize_token_embeddings(new_vocab_size)
@@ -164,7 +166,7 @@ class DistilbertModel(nn.Module):
         self.model.classifier = nn.Sequential(*classifier_layers)
         self.model.to(self.device)
 
-class XLNetModel(nn.Module): #addd_layerを消したら動く
+class XLNetModel(nn.Module): #add_layerを消したら動く
     def __init__(self, device, num_labels=6, model_config=None):
         super(XLNetModel, self).__init__()
 
@@ -177,12 +179,12 @@ class XLNetModel(nn.Module): #addd_layerを消したら動く
             for key, value in model_config.items():
                 setattr(config, key, value)
         
-        self.model = AutoModelForSequenceClassification.from_pretrained('xlnet-base-cased', config=config)
+        self.model = AutoModelForSequenceClassification.from_pretrained('xlnet-base-cased',num_labels=num_labels)
         self.model.to(self.device)
-        self.classifier = self.model.classifier
         
-    def forward(self, input_ids, attention_mask):
-        return self.model(input_ids, attention_mask=attention_mask)
+    def forward(self, input_ids, attention_mask=None, token_type_ids=None, labels=None):
+        outputs = self.model(input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids, labels=labels)
+        return outputs
     
     def resize_token_embeddings(self, new_vocab_size):
         self.model.resize_token_embeddings(new_vocab_size)
@@ -191,8 +193,8 @@ class XLNetModel(nn.Module): #addd_layerを消したら動く
         hidden_size = self.model.config.hidden_size
         
         # Classifierがnn.Linearかどうか確認する
-        if isinstance(self.model.classifier, nn.Linear):
-            in_features = self.model.classifier.in_features
+        if hasattr(self.model, 'logits_proj') and isinstance(self.model.logits_proj, nn.Linear):
+            in_features = self.model.logits_proj.in_features
         else:
             raise AttributeError("The classifier does not have 'in_features' attribute")
         
@@ -207,7 +209,7 @@ class XLNetModel(nn.Module): #addd_layerを消したら動く
         
         classifier_layers.append(nn.Linear(in_features, out_features))
 
-        self.model.classifier = nn.Sequential(*classifier_layers)
+        self.model.logits_proj = nn.Sequential(*classifier_layers)
         self.model.to(self.device)
 
 class ALbertModel(nn.Module): #addd_layerを消したら動く
@@ -256,9 +258,9 @@ class ALbertModel(nn.Module): #addd_layerを消したら動く
         self.model.classifier = nn.Sequential(*classifier_layers)
         self.model.to(self.device)
     
-class ElectoraModel(nn.Module):
+class ElectraModel(nn.Module):
     def __init__(self, device, num_labels=6, model_config=None):
-        super(ElectoraModel, self).__init__()
+        super(ElectraModel, self).__init__()
 
         self.device = device
         config = AutoConfig.from_pretrained('google/electra-base-discriminator')
