@@ -11,7 +11,7 @@ from sklearn.metrics import (
 
 from .base_model import BaseClassifier
 
-from .utils import cohen_kappa_eval
+# from .utils import cohen_kappa_eval
 
 class XGBoostClassifier(BaseClassifier):
     def __init__(self, input_dim, output_dim, model_config, verbose) -> None:
