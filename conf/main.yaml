@@ -8,7 +8,7 @@ hydra:
 defaults:
   - _self_
   - data: base
-  - model: deberta
-  - exp: simple
+  - model: bert #catboost
+  - exp: simple #stacking
 
 seed: 42
