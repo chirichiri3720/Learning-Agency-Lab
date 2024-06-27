@@ -20,6 +20,7 @@ protobuf = "^5.27.0"
 xgboost = "^2.1.0"
 lightgbm = "^4.4.0"
 catboost = "^1.2.5"
+pyspellchecker = "^0.8.1"
 
 
 [build-system]
