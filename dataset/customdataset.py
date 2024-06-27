@@ -1,7 +1,7 @@
 import pandas as pd
 import torch
 from torch.utils.data import Dataset, DataLoader
-from transformers import BertTokenizer, AutoTokenizer
+from transformers import BertTokenizer, AutoTokenizer, AutoModelForMaskedLM
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 import numpy as np
@@ -13,12 +13,14 @@ from tokenizers import AddedToken
 
 # from collections import Counter
 import re
-# import numpy as np
-# import pandas as pd
+import string
+
 # import matplotlib.pyplot as plt
 # import seaborn as sns
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.cluster import KMeans
+from spellchecker import SpellChecker
+from collections import Counter
 # import nltk
 # from nltk.corpus import stopwords
 # import warnings
@@ -129,8 +131,37 @@ class V1(CustomDataset):
 class V2(CustomDataset):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self.spell = SpellChecker()
+        custom_words = [
+            # 省略形
+            "isn't", "aren't", "can't", "couldn't", "didn't", "doesn't", "don't", "hadn't", "hasn't", "haven't",
+            "he'd", "he'll", "he's", "i'd", "i'll", "i'm", "i've", "it's", "let's", "mightn't", "mustn't", "shan't",
+            "she'd", "she'll", "she's", "shouldn't", "that's", "there's", "they'd", "they'll", "they're", "they've",
+            "we'd", "we're", "we've", "weren't", "what'll", "what's", "where's", "who'll", "who's", "won't",
+            "wouldn't", "you'd", "you'll", "you're", "you've",
+            # ドメイン固有の用語
+            "machine learning", "neural network", "genome", "vaccine", "coronavirus", "covid",
+            # 固有名詞
+            "microsoft", "google", "python", "new york", "tesla", "facebook",
+            # 略語および頭字語
+            "nasa", "fbi", "ai", "http", "api", "json", "html", "css",
+            # スラングおよび口語表現
+            "gonna", "wanna", "cool", "awesome", "lol", "omg", "btw",
+            # 未定義検出単語
+            'driverless', 'nasa', 'venus', 'dont', 'alot', 'thats', 'europe', 'paris', 'dr', 'american', 'mona',
+             'fahrenheit', 'lisa', 'huang', 'luke', 'bogota', 'google', "venus's", '3d', 'im', 'cydonia', 'facs', 
+             'vauban', "nasa's", 'carfree', 'april', 'wouldnt', 'earthlike', 'etc', 'americans', 'becuase', 'didnt', 
+             'doesnt', 'isnt', 'columbia', 'idaho', 'florida', 'california', 'theres','garvin', 'walter', 
+             'monday', 'rosenthal',  'venusian', 'gps', 'bmw', 'heidrun', 'winnertakeall', 'bomberger', 'texting', 'becasue', 
+             'jpl', 'crete', 'richard', 'unrra', 'carlos', 'eckman', 'arturo', 'venice', 'da', 'blimplike', 'al', 'tabletennis', 'obama', 'egyptian', 
+             'arent', 'nearrecord', 'malin', 'propername', 'atlantic', 'michael', 'elisabeth', 'thomas', 'selsky', 
+              'carintensive', 'robert', 'mph', 'brin', 'plumer', 'shouldnt', 'heshe', 'sergey', 'nixon', "d'alto", 
+              "vauban's", 'texas', 'european',
+        ]
+    
         self.add_prompts()
         self.add_features()
+        # self.check()
     
     def add_prompts(self):
         prompts = [
@@ -162,6 +193,8 @@ class V2(CustomDataset):
         # df['stopwords'] = df['full_text'].apply(count_stopwords, args=(stopwords,))
 
         # df['not_stopwords'] = df['words'] - df['stopwords']
+
+        df_concat['spelling_errors'] = df_concat['full_text'].apply(self.count_spelling_errors)
 
         df_concat['cleaned_text'] = df_concat['full_text'].apply(self.dataPreprocessing)
 
@@ -202,8 +235,7 @@ class V2(CustomDataset):
         self.train = df_concat[:len(self.train)]
         self.test = df_concat[len(self.train):]
         self.test.drop(self.target_column, axis=1, inplace=True)
-        self.feature_columns = ['letters', 'words', 'unique_words', 'sentences', 'paragraph', 'group','prediction_score']
-        print(df_concat.columns)
+        self.feature_columns = ['letters', 'words', 'unique_words', 'sentences', 'paragraph', 'group','prediction_score']#, 'spelling_errors'
 
     def removeHTML(self, x):
         html=re.compile(r'<.*?>')
@@ -230,5 +262,43 @@ class V2(CustomDataset):
         x = x.strip()
         return x
     
+    # full_textカラムに含まれる未定義単語の検出
+    def find_unknown_words(self, text):
+        # アポストロフィを除外した句読点のリストを作成
+        punctuation_without_apostrophe = string.punctuation.replace("'", "")
+
+        # 句読点を削除するための変換テーブルを作成
+        trans_table = str.maketrans('', '', punctuation_without_apostrophe)
+
+        # 変換テーブルを使用して句読点を削除
+        text = text.translate(trans_table)
+        words = text.split()
+        return self.spell.unknown(words)
+    
+    # 未定義単語の確認の場合のみ実行する
+    def check(self):
+        # 全てのテキストから未定義単語を収集
+        unknown_words_counter = Counter()
+        for text in self.train['full_text']:
+            unknown_words_counter.update(self.find_unknown_words(text))
+        
+        sorted_unknown_words = [word for word, count in unknown_words_counter.most_common(200)]
+
+        # 未定義単語の表示（上位10個）
+        print(sorted_unknown_words)
+        exit()
+
+    def count_spelling_errors(self, text):
+        # アポストロフィを除外した句読点のリストを作成
+        punctuation_without_apostrophe = string.punctuation.replace("'", "")
+
+        # 句読点を削除するための変換テーブルを作成
+        trans_table = str.maketrans('', '', punctuation_without_apostrophe)
+
+        # 変換テーブルを使用して句読点を削除
+        text = text.translate(trans_table)
+        words = text.split()
+        misspelled = self.spell.unknown(words)
+        return len(misspelled)
 
 
