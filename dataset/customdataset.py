@@ -54,7 +54,7 @@ class CustomDataset():
         self.test = pd.read_csv(to_absolute_path("datasets/test.csv"))
 
         # # データ削減
-        self.train = self.train[:5000]
+        # self.train = self.train[:5000]
 
         self.feature_column = feature_column
         self.target_column = target_column
@@ -202,12 +202,12 @@ class V2(CustomDataset):
         prediction_train_elements = df_train[['essay_id','prediction_score']] 
 
 
-        self.test.loc[:,'prediction_score'] = 3    
-        prediction_test_elements = self.test[['essay_id','prediction_score']]
+        # self.test.loc[:,'prediction_score'] = 3    
+        # prediction_test_elements = self.test[['essay_id','prediction_score']]
 
-        prediction_elements = pd.concat([prediction_train_elements,prediction_test_elements],ignore_index=True)
+        # prediction_elements = pd.concat([prediction_train_elements,prediction_test_elements],ignore_index=True)
 
-        df_concat = df_concat.merge(prediction_elements, on='essay_id', how='left')
+        df_concat = df_concat.merge(prediction_train_elements, on='essay_id', how='left')
   
         df_concat.to_csv('df_concat.csv')
 
@@ -232,10 +232,16 @@ class V2(CustomDataset):
 
 
 
-        self.train = df_concat[:len(self.train)]
-        self.test = df_concat[len(self.train):]
-        self.test.drop(self.target_column, axis=1, inplace=True)
-        self.feature_columns = ['letters', 'words', 'unique_words', 'sentences', 'paragraph', 'group','prediction_score']#, 'spelling_errors'
+        # self.train = df_concat[:len(self.train)]
+        # self.test = df_concat[len(self.train):]
+        # self.test.drop(self.target_column, axis=1, inplace=True)
+        self.train = df_concat.iloc[:len(self.train)].copy()
+        self.test = df_concat.iloc[len(self.train):].copy()
+        # test データから target_column を削除
+        self.test = self.test.drop(self.target_column, axis=1)
+        self.feature_columns = ['letters', 'words', 'unique_words', 'sentences', 'paragraph', 'group','prediction_score']
+        self.feature_column = 'cleaned_text'
+        # print(df_concat.columns)
 
     def removeHTML(self, x):
         html=re.compile(r'<.*?>')
