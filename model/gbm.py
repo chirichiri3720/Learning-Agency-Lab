@@ -60,6 +60,7 @@ class CBTClassifier(BaseClassifier):
             random_seed=seed,
             eval_metric='WKappa',
             **self.model_config,
+            early_stopping_rounds=50, #optunaはこっち
         )
 
     def fit(self, X, y, eval_set):

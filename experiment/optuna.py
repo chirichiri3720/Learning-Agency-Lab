@@ -7,11 +7,15 @@ import optuna
 from hydra.utils import to_absolute_path
 from sklearn.model_selection import StratifiedKFold
 
-from model import get_classifier, get_tree_classifier
+from model import get_tree_classifier
+from .utils import cal_kappa_score
 
 import optuna.visualization as ov
 import matplotlib.pyplot as plt
-import cv2
+
+from omegaconf import DictConfig, OmegaConf
+
+# import cv2
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +45,7 @@ def lightgbm_config(trial: optuna.Trial, model_config, name=""):
     model_config.min_data_in_leaf = trial.suggest_int("min_data_in_leaf", 5, 50, log=True)
     return model_config
 
-def catboost_config(trial: optuna.Trial, model_config, name=""):
+def catboost_config(trial: optuna.Trial, model_config: DictConfig, name=""):
     model_config.depth = trial.suggest_int("depth", 3, 10)
     model_config.learning_rate = trial.suggest_float("learning_rate", 1e-5, 1.0)
     model_config.random_strength = trial.suggest_int("random_strength", 0, 100)
@@ -56,8 +60,6 @@ def get_model_config(model_name):
         return lightgbm_config
     elif model_name == "catboost":
         return catboost_config
-    elif model_name == "xgblr":
-        return xgboost_config
     else:
         raise ValueError()
 
@@ -142,11 +144,12 @@ class OptimParam:
             y_train,
             eval_set=(X_val, y_val),
         )
-        score = model.evaluate(
-            self.val_data[self.columns],
-            self.val_data[self.target_column].values.squeeze(),
-        )
-        return score
+        kappa = cal_kappa_score(model,self.val_data, self.columns, self.target_column)
+        # score = model.evaluate(
+        #     self.val_data[self.columns],
+        #     self.val_data[self.target_column].values.squeeze(),
+        # )
+        return kappa
 
     def cross_validation(self, model_config):
         skf = StratifiedKFold(n_splits=10, random_state=self.seed, shuffle=True)
@@ -154,19 +157,20 @@ class OptimParam:
         for _, (train_idx, val_idx) in enumerate(skf.split(self.X, self.y)):
             X_train, y_train = self.X.iloc[train_idx], self.y[train_idx]
             X_val, y_val = self.X.iloc[val_idx], self.y[val_idx]
-            score = self.fit(model_config, X_train, y_train, X_val, y_val)
+            kappa = self.fit(model_config, X_train, y_train, X_val, y_val)
             if self.task == "classifier":
-                ave.append(score["ACC"])
-            elif self.task == "regressor":
-                ave.append(score["RMSE"])
+                # ave.append(score["kappa"])
+                ave.append(kappa)
+            # elif self.task == "regressor":
+                # ave.append(score["RMSE"])
         return mean(ave)
 
     def one_shot(self, model_config):
-        score = self.fit(model_config, self.X, self.y)
+        kappa = self.fit(model_config, self.X, self.y)
         if self.task == "classifier":
-            return score["ACC"]
-        elif self.task == "regressor":
-            return score["RMSE"]
+            return kappa
+        # elif self.task == "regressor":
+        #     return score["RMSE"]
 
     def objective(self, trial):
         _model_config = self.model_config(trial, deepcopy(self.default_config))
@@ -245,8 +249,8 @@ class OptimParam:
         if n_complete > 0:
             n_trials -= n_complete
         study.optimize(self.objective, n_trials=n_trials, n_jobs=self.n_jobs)
-        self.plot_param_importances(study)
-        self.plot_optimization_history(study)
+        # self.plot_param_importances(study)
+        # self.plot_optimization_history(study)
         best_params = study.best_params
         logger.info("Best parameters found:")
         for param, value in best_params.items():
