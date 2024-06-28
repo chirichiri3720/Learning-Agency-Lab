@@ -174,4 +174,12 @@ deberta.zip
 deberta.py
 bert-model.py
 bert-tokenizer.py
-
+distilbert-base-cased.zip
+distilbert-base-cased-model
+distilbert-base-cased-tokenizer
+xlnet-base-cased.zip
+xlnet-base-cased-model
+xlnet-base-cased-tokenizer
+albert-base-v2.zip
+albert-base-v2-model
+albert-base-v2-tokenizer
