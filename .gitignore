@@ -172,4 +172,6 @@ deberta-v3-small-model.zip
 deberta-v3-large.zip
 deberta.zip
 deberta.py
+bert-model.py
+bert-tokenizer.py
 
