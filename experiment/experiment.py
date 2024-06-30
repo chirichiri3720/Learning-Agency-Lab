@@ -146,7 +146,7 @@ class ExpBase:
 
                 for idx, essay_id in enumerate(d["idx"]):
                     score = int (outputs.logits[idx].argmax().item() + 1)
-                    self.llm_pred_data.loc[self.llm_pred_data['essay_id'] == essay_id, 'score'] = score 
+                    self.llm_pred_data.loc[self.llm_pred_data['essay_id'] == essay_id, 'prediction_score'] = score 
 
                 _, preds = torch.max(outputs.logits, dim=1)
                 loss = self.loss_fn(outputs.logits, labels)
@@ -206,7 +206,7 @@ class ExpBase:
         self.scheduler = get_linear_schedule_with_warmup(self.optimizer, num_warmup_steps=0, num_training_steps=self.total_steps)
 
         logger.info(f"model name: {self.model_name} device: {self.device}")
-        self.choice_layer()
+        # self.choice_layer()
 
         best_epoch = 0
 
